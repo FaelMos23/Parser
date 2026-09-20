@@ -15,6 +15,12 @@ from ast_nodes import (
     Stmt,
     StringLiteral,
     TypeName,
+    # Rafael
+    WhileStmt,
+    ReturnStmt,
+    PrintStmt,
+    BinaryExpr,
+    BinaryOperator,
 )
 
 
@@ -221,8 +227,6 @@ class Parser:
 
     # statement ::= declaration | id_or_call_statement | if_statement | while_statement | return_statement | print_statement | block
     def parse_statement(self) -> Stmt:
-        # usar switch case?
-
         match(self.peek()):
             case TokenKind.KW_IF:
                 return self.parse_if_statement()
@@ -310,29 +314,131 @@ class Parser:
         )
 
     # RAFAEL - próx. 8
+    # while_statement ::= KW_WHILE LEFT_PAREN expression RIGHT_PAREN block
     def parse_while_statement(self) -> Stmt:
-        raise NotImplementedError("implemente while_statement")
+        start = self.expect(TokenKind.KW_WHILE)
 
+        # (cond)
+        self.expect(TokenKind.LEFT_PAREN)
+        cond = self.parse_expression()
+        self.expect(TokenKind.RIGHT_PAREN)
+
+        # {block}
+        body = self.parse_block()
+        end = self.peek(-1)
+
+        return WhileStmt(
+            condition= cond,
+            body= body,
+            span= self._span(start, end)
+        )
+
+    # return_statement ::= KW_RETURN expression? SEMICOLON
     def parse_return_statement(self) -> Stmt:
-        raise NotImplementedError("implemente return_statement")
+        start = self.expect(TokenKind.KW_RETURN)
 
+        if self.peek().kind != TokenKind.SEMICOLON:
+            val = self.parse_expression()
+        else: val = None
+
+        end = self.expect(TokenKind.SEMICOLON)
+
+        return ReturnStmt(
+            value= val,
+            span= self._span(start, end)
+        )
+
+    # print_statement ::= KW_PRINT LEFT_PAREN print_item (COMMA print_item)* RIGHT_PAREN SEMICOLON
     def parse_print_statement(self) -> Stmt:
-        raise NotImplementedError("implemente print_statement")
+        start = self.expect(TokenKind.KW_PRINT)
+        items: list[PrintItem] = []
 
+        self.expect(TokenKind.LEFT_PAREN)
+
+        items.append(self.parse_print_item())
+
+        while self.peek().kind == TokenKind.COMMA:
+            self.advance()
+            items.append(self.parse_print_item())
+
+        self.expect(TokenKind.RIGHT_PAREN)
+
+        end = self.expect(TokenKind.SEMICOLON)
+        
+        return PrintStmt(
+            items= items,
+            span= self._span(start, end)
+        )
+
+    # print_item ::= expression | string_literals
     def parse_print_item(self) -> PrintItem:
-        raise NotImplementedError("implemente print_item")
+        start = self.peek()
 
+        if start.kind in EXPRESSION_START:
+            return self.parse_expression()
+        else:
+            return self.parse_string_literals()
+
+    # string_literals ::= STRING_LITERAL+
     def parse_string_literals(self) -> StringLiteral:
-        raise NotImplementedError("implemente string_literals")
+        start = self.expect(TokenKind.STRING_LITERAL)
+        curr_total_str = start.value
+        end = start
 
+        while self.peek().kind == TokenKind.STRING_LITERAL:
+            end = self.advance()
+            curr_total_str += end.value
+
+        return StringLiteral(
+            curr_total_str,
+            span=self._span(start, end)
+        )
+
+    # expression ::= logical_or
     def parse_expression(self) -> Expr:
-        raise NotImplementedError("implemente expression")
+        return self.parse_logical_or()
 
+# logical_or ::= logical_and (LOGICAL_OR logical_and)*
     def parse_logical_or(self) -> Expr:
-        raise NotImplementedError("implemente logical_or")
+        e = self.parse_logical_and()
 
+        # adicionando 2° e outras partes lógicas, se existirem
+        while self.peek().kind == TokenKind.LOGICAL_OR:
+            self.advance()
+            
+            # direita
+            right_e = self.parse_logical_and()
+            
+            # cria expressão binária com informações acima e o resultado se torna o 'e' do próximo loop
+            e = BinaryExpr(
+                operator=BinaryOperator.LOGICAL_OR,
+                left=e,
+                right=right_e,
+                span=self._span(e, right_e) # _span aceita Nodes além de Tokens
+            )
+
+        return e
+
+    # logical_and ::= equality (LOGICAL_AND equality)*
     def parse_logical_and(self) -> Expr:
-        raise NotImplementedError("implemente logical_and")
+        e = self.parse_equality()
+
+        # adicionando 2° e outras partes lógicas, se existirem
+        while self.peek().kind == TokenKind.LOGICAL_AND:
+            self.advance()
+            
+            # direita
+            right_e = self.parse_equality()
+            
+            # cria expressão binária com informações acima e o resultado se torna o 'e' do próximo loop
+            e = BinaryExpr(
+                operator=BinaryOperator.LOGICAL_AND,
+                left=e,
+                right=right_e,
+                span=self._span(e, right_e) # _span aceita Nodes além de Tokens
+            )
+
+        return e
 
     # MARIA - próx. 7
 
