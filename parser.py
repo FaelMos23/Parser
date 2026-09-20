@@ -28,6 +28,11 @@ from ast_nodes import (
     PrintStmt,
     BinaryExpr,
     BinaryOperator,
+    # Maria
+    UnaryExpr,
+    UnaryOperator,
+    IntLiteral,
+    BoolLiteral,
 )
 
 
@@ -487,25 +492,177 @@ class Parser:
         return e
 
     # MARIA - próx. 7
-
+    # equality ::= relational ((EQUAL_EQUAL | NOT_EQUAL) relational)*
     def parse_equality(self) -> Expr:
-        raise NotImplementedError("implemente equality")
+        e = self.parse_relational()
 
+        # adicionando 2° e outras partes lógicas, se existirem
+        while self.peek().kind == TokenKind.EQUAL_EQUAL or self.peek().kind == TokenKind.NOT_EQUAL:
+            cmp = self.advance().kind
+            
+            # direita
+            right_e = self.parse_relational()
+
+            ops = {TokenKind.EQUAL_EQUAL: BinaryOperator.EQUAL, TokenKind.NOT_EQUAL: BinaryOperator.NOT_EQUAL}
+            
+            # cria expressão binária com informações acima e o resultado se torna o 'e' do próximo loop
+            e = BinaryExpr(
+                operator=ops[cmp],
+                left=e,
+                right=right_e,
+                span=self._span(e, right_e) # _span aceita Nodes além de Tokens
+            )
+
+        return e
+
+    # relational ::= additive ((LESS | LESS_EQUAL | GREATER | GREATER_EQUAL) additive)*
     def parse_relational(self) -> Expr:
-        raise NotImplementedError("implemente relational")
+        e = self.parse_additive()
 
+        # adicionando 2° e outras partes lógicas, se existirem
+        while self.peek().kind == TokenKind.LESS or self.peek().kind == TokenKind.LESS_EQUAL or self.peek().kind == TokenKind.GREATER or self.peek().kind == TokenKind.GREATER_EQUAL:
+            cmp = self.advance().kind
+            
+            # direita
+            right_e = self.parse_additive()
+
+            ops = {TokenKind.LESS: BinaryOperator.LESS, TokenKind.LESS_EQUAL: BinaryOperator.LESS_EQUAL, TokenKind.GREATER: BinaryOperator.GREATER, TokenKind.GREATER_EQUAL: BinaryOperator.GREATER_EQUAL}
+            
+            # cria expressão binária com informações acima e o resultado se torna o 'e' do próximo loop
+            e = BinaryExpr(
+                operator=ops[cmp],
+                left=e,
+                right=right_e,
+                span=self._span(e, right_e) # _span aceita Nodes além de Tokens
+            )
+
+        return e
+
+    # additive ::= multiplicative ((PLUS | MINUS) multiplicative)*
     def parse_additive(self) -> Expr:
-        raise NotImplementedError("implemente additive")
+        e = self.parse_multiplicative()
 
+        # adicionando 2° e outras partes lógicas, se existirem
+        while self.peek().kind == TokenKind.PLUS or self.peek().kind == TokenKind.MINUS:
+            cmp = self.advance().kind
+            
+            # direita
+            right_e = self.parse_multiplicative()
+
+            ops = {TokenKind.PLUS: BinaryOperator.ADD, TokenKind.MINUS: BinaryOperator.SUBTRACT}
+            
+            # cria expressão binária com informações acima e o resultado se torna o 'e' do próximo loop
+            e = BinaryExpr(
+                operator=ops[cmp],
+                left=e,
+                right=right_e,
+                span=self._span(e, right_e) # _span aceita Nodes além de Tokens
+            )
+
+        return e
+
+    # multiplicative ::= unary ((STAR | SLASH | PERCENT) unary)*
     def parse_multiplicative(self) -> Expr:
-        raise NotImplementedError("implemente multiplicative")
+        e = self.parse_unary()
 
+        # adicionando 2° e outras partes lógicas, se existirem
+        while self.peek().kind == TokenKind.STAR or self.peek().kind == TokenKind.SLASH or self.peek().kind == TokenKind.PERCENT:
+            cmp = self.advance().kind
+            
+            # direita
+            right_e = self.parse_unary()
+
+            ops = {TokenKind.STAR: BinaryOperator.MULTIPLY, TokenKind.SLASH: BinaryOperator.DIVIDE, TokenKind.PERCENT: BinaryOperator.REMAINDER}
+            
+            # cria expressão binária com informações acima e o resultado se torna o 'e' do próximo loop
+            e = BinaryExpr(
+                operator=ops[cmp],
+                left=e,
+                right=right_e,
+                span=self._span(e, right_e) # _span aceita Nodes além de Tokens
+            )
+
+        return e
+
+    # unary ::= (LOGICAL_NOT | MINUS) unary | primary
     def parse_unary(self) -> Expr:
-        raise NotImplementedError("implemente unary")
+        if self.peek().kind == TokenKind.LOGICAL_NOT or self.peek().kind == TokenKind.MINUS:
+            ue = self.advance()
+            operand = self.parse_unary()
 
+            ops = {TokenKind.LOGICAL_NOT: UnaryOperator.NOT, TokenKind.MINUS: UnaryOperator.NEGATE}
+
+            return UnaryExpr(
+                operator= ops[ue.kind],
+                operand= operand,
+                span= self._span(ue, operand)
+            )
+
+        else:
+            return self.parse_primary()
+
+    # primary ::= LEFT_PAREN expression RIGHT_PAREN | IDENTIFIER (LEFT_PAREN arguments RIGHT_PAREN)? | INT_LITERAL | KW_TRUE | KW_FALSE
     def parse_primary(self) -> Expr:
-        raise NotImplementedError("implemente primary")
+        start = self.peek()
 
+        poss_tok = {TokenKind.INT_LITERAL, TokenKind.KW_TRUE, TokenKind.KW_FALSE}
+
+        if start.kind == TokenKind.LEFT_PAREN:
+            self.advance()
+            exp = self.parse_expression()
+            self.expect(TokenKind.RIGHT_PAREN)
+
+            return exp  # this is not correct, I need to add the parentheses to start and end
+
+        elif start.kind == TokenKind.IDENTIFIER:
+            id = self.advance()
+
+            # é função?
+            if self.peek().kind == TokenKind.LEFT_PAREN:
+                self.advance()
+                args = self.parse_arguments()
+                r_paren = self.expect(TokenKind.RIGHT_PAREN)
+                
+                return CallExpr(
+                    name=id.lexeme,
+                    arguments=args,
+                    span=self._span(id, r_paren)
+                )
+
+            # se não for função, é variável
+            return IdentifierExpr(
+                name=id.lexeme,
+                span=self._span(id, id)
+            )
+
+        else:
+            t = self.expect(poss_tok)
+            match(t.kind):
+                case TokenKind.INT_LITERAL:
+                    return IntLiteral(
+                        value= t.value,
+                        span= self._span(t, t)
+                    )
+                case TokenKind.KW_TRUE:
+                    return BoolLiteral(
+                        value= t.value,
+                        span= self._span(t, t)
+                    )
+                case TokenKind.KW_FALSE:
+                    return BoolLiteral(
+                        value= t.value,
+                        span= self._span(t, t)
+                    )
+
+    # arguments ::= (expression (COMMA expression)*)?
     def parse_arguments(self) -> list[Expr]:
-        raise NotImplementedError("implemente arguments")
+        exprs: list[Expr] = []
 
+        if self.peek().kind in EXPRESSION_START:
+            exprs.append(self.parse_expression())
+
+            while self.peek().kind ==  TokenKind.COMMA:
+                self.advance()
+                exprs.append(self.parse_expression())
+
+        return exprs
