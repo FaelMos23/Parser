@@ -180,7 +180,7 @@ class Parser:
     # LUIZA - próx. 7
     # parameter_list ::= parameter (COMMA parameter)*
     def parse_parameter_list(self) -> list[Parameter]:
-        params = list()
+        params: list[Parameter] = []
         hasNext = True
 
         while hasNext:
@@ -194,13 +194,14 @@ class Parser:
     
     # parameter ::= type IDENTIFIER
     def parse_parameter(self) -> Parameter:
+        start = self.peek()
         t = self.parse_type()
-        n = self.expect(TokenKind.IDENTIFIER)
+        end = self.expect(TokenKind.IDENTIFIER)
 
         return Parameter(
             t,
-            n,
-            span=self._span(t, n)
+            end.lexeme,
+            span= self._span(start, end)
         )
     
     # block ::= LEFT_BRACE statement* RIGHT_BRACE
@@ -214,7 +215,7 @@ class Parser:
         while hasNext:
             next_elem = self.peek()
 
-            if next_elem in STATEMENT_START:        # ainda há pelo menos mais uma statement
+            if next_elem.kind in STATEMENT_START:        # ainda há pelo menos mais uma statement
                 bloco.append(self.parse_statement())
             else:
                 hasNext = False                     # fim das statements
@@ -227,7 +228,9 @@ class Parser:
 
     # statement ::= declaration | id_or_call_statement | if_statement | while_statement | return_statement | print_statement | block
     def parse_statement(self) -> Stmt:
-        match(self.peek()):
+        # usar switch case?
+
+        match(self.peek().kind):
             case TokenKind.KW_IF:
                 return self.parse_if_statement()
 
@@ -245,7 +248,7 @@ class Parser:
 
             case _:
                 # se não é nenhuma acima, pode ser declaração, que começa com 'type'
-                if self.peek() in TYPE_START:
+                if self.peek().kind in TYPE_START:
                     return self.parse_declaration()
 
                 # última opção é id_or_call, que começa com IDENTIFIER
@@ -254,62 +257,98 @@ class Parser:
 
     # id_or_call_statement ::= IDENTIFIER (ASSIGN expression | LEFT_PAREN arguments RIGHT_PAREN) SEMICOLON
     def parse_id_or_call_statement(self) -> Stmt:
-        id = self.expect(TokenKind.IDENTIFIER)
+        id_token = self.expect(TokenKind.IDENTIFIER)
 
         exp_or_args = self.peek()
-        if exp_or_args == TokenKind.ASSIGN:
+        if exp_or_args.kind == TokenKind.ASSIGN:
             self.advance()
+            
+            # valor atribuído
+            value_node = self.parse_expression()
+            end_token = self.expect(TokenKind.SEMICOLON)
 
-            self.parse_expression()
+            # Assignments(target[IdentifierExpr], value)
+            target_node = IdentifierExpr(
+                id_token.lexeme, 
+                span=self._token_span(id_token)
+            )
 
-        elif exp_or_args == TokenKind.LEFT_PAREN:
+            return Assignment(
+                target_node,
+                value_node,
+                span=self._span(id_token, end_token)
+            )
+
+        elif exp_or_args.kind == TokenKind.LEFT_PAREN:
             self.advance()
-
+            
             args = self.parse_arguments()
-            self.expect(TokenKind.RIGHT_PAREN)
+            r_paren = self.expect(TokenKind.RIGHT_PAREN)
+            end_token = self.expect(TokenKind.SEMICOLON)
+
+            # CallStmt(call[CallExpr])
+            call_expr = CallExpr(
+                id_token.lexeme,
+                args,
+                span=self._span(id_token, r_paren)
+            )
+
+            return CallStmt(
+                call= call_expr,
+                span= self._span(id_token, end_token)
+            )
 
         else:
-            ParserError(exp_or_args, {TokenKind.ASSIGN, TokenKind.LEFT_PAREN})
-
-        end = self.expect(TokenKind.SEMICOLON)
-
-        return Stmt(
-            span= self._span(id, end)
-        )
+            raise ParserError(exp_or_args, {TokenKind.ASSIGN, TokenKind.LEFT_PAREN})
 
     # declaration ::= type IDENTIFIER (ASSIGN expression)? SEMICOLON
     def parse_declaration(self) -> Stmt:
-        start = self.expect(TYPE_START)
+        start_token = self.expect(TYPE_START)
+        
+        decl_type = TYPE_BY_TOKEN[start_token.kind]
 
-        self.expect(TokenKind.IDENTIFIER)
+        id_token = self.expect(TokenKind.IDENTIFIER)
 
-        if self.peek() == TokenKind.ASSIGN:
+        poss_expr = None
+
+        # checando possível expressão
+        if self.peek().kind == TokenKind.ASSIGN:
             self.advance()
-            self.parse_expression()
+            poss_expr = self.parse_expression()
 
-        end = self.expect(TokenKind.SEMICOLON)
+        end_token = self.expect(TokenKind.SEMICOLON)
 
-        return Stmt(
-            span= self._span(start, end)
+        return VarDecl(
+            type=decl_type,
+            name=id_token.lexeme,
+            initializer=poss_expr,
+            span=self._span(start_token, end_token)
         )
 
     # if_statement ::= KW_IF LEFT_PAREN expression RIGHT_PAREN block (KW_ELSE block)?
     def parse_if_statement(self) -> Stmt:
         start = self.expect(TokenKind.KW_IF)
 
+        # (cond)
         self.expect(TokenKind.LEFT_PAREN)
-
-        self.parse_expression()
-
+        cond = self.parse_expression()
         self.expect(TokenKind.RIGHT_PAREN)
 
-        end = self.parse_block()
+        # {then_block}
+        then_block = self.parse_block()
+        end = self.peek(-1)
 
-        if self.peek() == TokenKind.KW_ELSE:
+        # possível existênca do bloco else
+        else_block = None
+        if self.peek().kind == TokenKind.KW_ELSE:
             self.advance()
-            end = self.parse_block()
+            else_block = self.parse_block()
+            end = self.peek(-1)
 
-        return Stmt(
+        return IfStmt(
+            condition= cond,
+            then_block= then_block,
+            else_block= else_block,
             span= self._span(start, end)
         )
 
