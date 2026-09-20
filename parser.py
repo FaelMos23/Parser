@@ -15,6 +15,13 @@ from ast_nodes import (
     Stmt,
     StringLiteral,
     TypeName,
+    # Luiza
+    IdentifierExpr,
+    Assignment,
+    CallExpr,
+    CallStmt,
+    VarDecl,
+    IfStmt,
     # Rafael
     WhileStmt,
     ReturnStmt,
