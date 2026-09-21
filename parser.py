@@ -612,8 +612,8 @@ class Parser:
             exp = self.parse_expression()
             self.expect(TokenKind.RIGHT_PAREN)
 
-            return exp  # this is not correct, I need to add the parentheses to start and end
-
+            return exp 
+        
         elif start.kind == TokenKind.IDENTIFIER:
             id = self.advance()
 
